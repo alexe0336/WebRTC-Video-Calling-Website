@@ -3,8 +3,8 @@ const password = "x";
 document.querySelector('#user-name').innerHTML = userName;
 
 //if trying it on a phone, use this instead...
-const socket = io.connect('https://alexe0336.github.io/WebRTC-Video-Calling-Website/',{
 // const socket = io.connect('https://localhost:8181/',{
+const socket = io.connect('https://alexe0336.github.io/WebRTC-Video-Calling-Website/',{
     auth: {
         userName,password
     }
