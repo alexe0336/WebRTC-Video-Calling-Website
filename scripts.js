@@ -4,7 +4,7 @@ document.querySelector('#user-name').innerHTML = userName;
 
 // const socket = io.connect('https://localhost:8181/',{
 //if trying it on a phone, use this instead...
-const socket = io.connect('https://alexe0336.github.io/WebRTC-Video-Calling-Website/',{
+const socket = io.connect('https://10.0.0.92:8181',{
     auth: {
         userName,password
     }
