@@ -2,7 +2,7 @@
   document.addEventListener("DOMContentLoaded", () => {
     const usernameSearchInput = document.getElementById("username-search");
     const searchCallButton = document.getElementById("search-call");
-    const waitingHangupButton = document.getElementById("waiting-hangup");
+    // const waitingHangupButton = document.getElementById("waiting-hangup");
     const statusMessage = document.getElementById("status-message");
 
     let isWaiting = false;
@@ -168,48 +168,43 @@
       console.log("======Added Ice Candidate======");
     };
 
-    const hangup = () => {
+    function hangup() {
       if (peerConnection) {
-        // Close the peer connection
         peerConnection.close();
         peerConnection = null;
       }
 
       if (localStream) {
-        // Stop all tracks in the local stream
         localStream.getTracks().forEach((track) => track.stop());
         localStream = null;
       }
 
       if (remoteStream) {
-        // Stop all tracks in the remote stream
         remoteStream.getTracks().forEach((track) => track.stop());
         remoteStream = null;
       }
 
-      // Clear the video elements
       localVideoEl.srcObject = null;
       remoteVideoEl.srcObject = null;
 
-      // Reset the offer flag
       didIOffer = false;
 
-      // Emit a hangup event to the server
       socket.emit("hangup", { userName });
 
       console.log("Call ended");
-      setWaitingState(false);
+      inCall = false;
+      isWaiting = false;
       statusMessage.textContent = "Call ended";
       incomingCallUsername = null;
       resetCallUI();
-    };
+    }
 
     if (searchCallButton) {
       searchCallButton.addEventListener("click", searchAndCall);
     }
-    if (waitingHangupButton) {
-      waitingHangupButton.addEventListener("click", handleWaitingHangup);
-    }
+    // if (waitingHangupButton) {
+    //   waitingHangupButton.addEventListener("click", handleWaitingHangup);
+    // }
 
     const hangupButton = document.querySelector("#hangup");
     if (hangupButton) {
@@ -261,50 +256,39 @@
     function displayIncomingCallUI(from) {
       incomingCallUsername = from;
       statusMessage.textContent = `Incoming call from ${from}`;
-
-      const answerButton = document.createElement("button");
-      answerButton.textContent = "Answer";
-      answerButton.classList.add("btn", "btn-success", "mr-2");
-      answerButton.addEventListener("click", answerIncomingCall);
-
-      const rejectButton = document.createElement("button");
-      rejectButton.textContent = "Reject";
-      rejectButton.classList.add("btn", "btn-danger");
-      rejectButton.addEventListener("click", rejectIncomingCall);
-
-      // Clear any existing buttons and add new ones
-      const controlsDiv = document.querySelector(".controls");
-      controlsDiv.innerHTML = "";
-      controlsDiv.appendChild(answerButton);
-      controlsDiv.appendChild(rejectButton);
+      updateCallUI("incoming");
     }
 
     function setWaitingState(waiting) {
       isWaiting = waiting;
       inCall = false;
-      waitingHangupButton.textContent = waiting ? "Waiting for Call" : "Hangup";
-      waitingHangupButton.classList.toggle("btn-warning", waiting);
-      waitingHangupButton.classList.toggle("btn-danger", !waiting);
+
+      if (waiting) {
+        statusMessage.textContent = "Waiting for answer...";
+        updateCallUI("waiting"); // We'll add this new state to updateCallUI
+      } else {
+        statusMessage.textContent = "";
+        resetCallUI();
+      }
     }
 
     function setInCallState() {
       isWaiting = false;
       inCall = true;
-      waitingHangupButton.textContent = "Hangup";
-      waitingHangupButton.classList.remove("btn-warning");
-      waitingHangupButton.classList.add("btn-danger");
+      updateCallUI("inCall");
+      statusMessage.textContent = `In call with ${incomingCallUsername}`;
     }
 
-    function handleWaitingHangup() {
-      if (inCall) {
-        hangup();
-      } else if (isWaiting) {
-        cancelCall();
-      }
-    }
+    // function handleWaitingHangup() {
+    //   if (inCall) {
+    //     hangup();
+    //   } else if (isWaiting) {
+    //     cancelCall();
+    //   }
+    // }
 
     function cancelCall() {
-      socket.emit("cancelCall");
+      socket.emit("cancelCall", { from: userName });
       setWaitingState(false);
       statusMessage.textContent = "Call cancelled";
     }
@@ -443,6 +427,41 @@
       };
     }
 
+    function updateCallUI(state) {
+      const controlsDiv = document.querySelector(".controls");
+      controlsDiv.innerHTML = ""; // Clear existing buttons
+
+      if (state === "incoming") {
+        const answerButton = document.createElement("button");
+        answerButton.textContent = "Answer";
+        answerButton.classList.add("btn", "btn-success", "mr-2");
+        answerButton.addEventListener("click", answerIncomingCall);
+
+        const rejectButton = document.createElement("button");
+        rejectButton.textContent = "Reject";
+        rejectButton.classList.add("btn", "btn-danger");
+        rejectButton.addEventListener("click", rejectIncomingCall);
+
+        controlsDiv.appendChild(answerButton);
+        controlsDiv.appendChild(rejectButton);
+      } else if (state === "inCall") {
+        const hangupButton = document.createElement("button");
+        hangupButton.textContent = "Hangup";
+        hangupButton.classList.add("btn", "btn-danger");
+        hangupButton.addEventListener("click", hangup);
+
+        controlsDiv.appendChild(hangupButton);
+      } else if (state === "waiting") {
+        const cancelButton = document.createElement("button");
+        cancelButton.textContent = "Cancel Call";
+        cancelButton.classList.add("btn", "btn-warning");
+        cancelButton.addEventListener("click", cancelCall);
+
+        controlsDiv.appendChild(cancelButton);
+      }
+      // 'default' state will clear all buttons
+    }
+
     function rejectIncomingCall() {
       console.log("Rejecting call from:", incomingCallUsername);
       if (incomingCallUsername) {
@@ -456,16 +475,7 @@
     }
 
     function resetCallUI() {
-      const controlsDiv = document.querySelector(".controls");
-      controlsDiv.innerHTML = `
-      <button id="waiting-hangup" class="btn btn-warning">
-        <i class="fas fa-clock"></i> Waiting for Call
-      </button>
-    `;
-      const waitingHangupButton = document.getElementById("waiting-hangup");
-      if (waitingHangupButton) {
-        waitingHangupButton.addEventListener("click", handleWaitingHangup);
-      }
+      updateCallUI("default"); // This will now clear all buttons
     }
   });
 })();

@@ -21,18 +21,22 @@
     <div class="container">
       <div id="user-name" class="text-center mb-4"></div>
       <!-- Search bar -->
-      <div class="search-bar mb-4">
-        <input
-          type="text"
-          id="username-search"
-          class="form-control"
-          placeholder="Enter username to call"
-        />
-        <button id="search-call" class="btn btn-primary mt-2">
-          <i class="fas fa-search"></i> Search and Call
-        </button>
+      <div class="search-container text-center mb-4">
+        <div class="input-group justify-content-center">
+          <input
+            type="text"
+            id="username-search"
+            class="form-control"
+            placeholder="Enter username to call"
+            style="max-width: 200px;"
+          />
+          <div class="input-group-append">
+            <button id="search-call" class="btn btn-success">
+              <i class="fas fa-search"></i> Search and Call
+            </button>
+          </div>
+        </div>
       </div>
-
       <div id="videos">
         <div id="video-wrapper">
           <video
@@ -52,12 +56,7 @@
         ></video>
       </div>
       <div class="controls">
-        <button id="waiting-hangup" class="btn btn-warning">
-          <i class="fas fa-clock"></i> Waiting for Call
-        </button>
-        <button id="hangup" class="btn btn-danger">
-          <i class="fas fa-phone-slash"></i> Hangup
-        </button>
+        <!-- Buttons will be dynamically added here -->
       </div>
       <div id="status-message" class="mt-3 text-center"></div>
     </div>
