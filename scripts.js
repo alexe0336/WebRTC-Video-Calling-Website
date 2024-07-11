@@ -216,6 +216,26 @@
       hangupButton.addEventListener("click", hangup);
     }
 
+    function handleIncomingOffer(offerObj) {
+      console.log("Received offer:", offerObj);
+      incomingCallUsername = offerObj.offererUserName;
+      peerConnection = new RTCPeerConnection(peerConfiguration);
+
+      // Set up event listeners for the peer connection
+      setupPeerConnectionListeners(peerConnection);
+
+      // Set the remote description (the offer)
+      peerConnection
+        .setRemoteDescription(new RTCSessionDescription(offerObj.offer))
+        .then(() => {
+          console.log("Set remote description success");
+          displayIncomingCallUI(offerObj.offererUserName);
+        })
+        .catch((error) => {
+          console.error("Error setting remote description:", error);
+        });
+    }
+
     function searchAndCall() {
       const targetUsername = usernameSearchInput.value.trim();
       if (targetUsername) {
@@ -364,22 +384,20 @@
         console.error("Error adding received ICE candidate:", error);
       }
     });
-    socket.on("newOfferAwaiting", async ([offerObj]) => {
-      try {
-        incomingCallUsername = offerObj.offererUserName;
-        await createPeerConnection(offerObj);
-        displayIncomingCallUI(offerObj.offererUserName);
-        console.log("Incoming call from:", offerObj.offererUserName); // Add this line for debugging
-      } catch (error) {
-        console.error("Error handling new offer:", error);
-      }
+    socket.on("newOfferAwaiting", (offerObj) => {
+      handleIncomingOffer(offerObj);
     });
 
     async function answerIncomingCall() {
       console.log("Answering call from:", incomingCallUsername);
-      if (incomingCallUsername) {
+      if (incomingCallUsername && peerConnection) {
         try {
           await fetchUserMedia();
+
+          // Add local stream to peer connection
+          localStream.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, localStream);
+          });
 
           const answer = await peerConnection.createAnswer();
           await peerConnection.setLocalDescription(answer);
@@ -397,8 +415,32 @@
           statusMessage.textContent = "Failed to establish call";
         }
       } else {
-        console.error("No incoming call to answer");
+        console.error(
+          "No incoming call to answer or peerConnection not created"
+        );
       }
+    }
+
+    function setupPeerConnectionListeners(pc) {
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log("New ICE candidate:", event.candidate);
+          socket.emit("iceCandidate", {
+            candidate: event.candidate,
+            to: incomingCallUsername,
+            from: userName,
+          });
+        }
+      };
+
+      pc.ontrack = (event) => {
+        console.log("Received remote track");
+        remoteVideoEl.srcObject = event.streams[0];
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log("ICE connection state:", pc.iceConnectionState);
+      };
     }
 
     function rejectIncomingCall() {

@@ -66,34 +66,18 @@ io.on("connection", (socket) => {
     socket.emit("availableOffers", offers);
   }
 
-  socket.on("newAnswer", (offerObj, ackFunction) => {
-    console.log(offerObj);
-    //emit this answer (offerObj) back to CLIENT1
-    //in order to do that, we need CLIENT1's socketid
-    const socketToAnswer = connectedSockets.find(
-      (s) => s.userName === offerObj.offererUserName
+  socket.on("newAnswer", ({ answer, offererUserName, answererUserName }) => {
+    console.log(
+      `Relaying answer from ${answererUserName} to ${offererUserName}`
     );
-    if (!socketToAnswer) {
-      console.log("No matching socket");
-      return;
-    }
-    //we found the matching socket, so we can emit to it!
-    const socketIdToAnswer = socketToAnswer.socketId;
-    //we find the offer to update so we can emit it
-    const offerToUpdate = offers.find(
-      (o) => o.offererUserName === offerObj.offererUserName
+    const offererSocket = connectedSockets.find(
+      (s) => s.userName === offererUserName
     );
-    if (!offerToUpdate) {
-      console.log("No OfferToUpdate");
-      return;
+    if (offererSocket) {
+      socket
+        .to(offererSocket.socketId)
+        .emit("answerResponse", { answer, from: answererUserName });
     }
-    //send back to the answerer all the iceCandidates we have already collected
-    ackFunction(offerToUpdate.offerIceCandidates);
-    offerToUpdate.answer = offerObj.answer;
-    offerToUpdate.answererUserName = userName;
-    //socket has a .to() which allows emiting to a "room"
-    //every socket has it's own room
-    socket.to(socketIdToAnswer).emit("answerResponse", offerToUpdate);
   });
 
   socket.on("sendIceCandidateToSignalingServer", (iceCandidateObj) => {
@@ -231,21 +215,14 @@ io.on("connection", (socket) => {
   });
 
   socket.on("newOffer", ({ offer, targetUsername, offererUserName }) => {
-    const newOffer = {
-      offererUserName, // Use the offererUserName sent from the client
-      offer: offer,
-      offerIceCandidates: [],
-      answererUserName: targetUsername,
-      answer: null,
-      answererIceCandidates: [],
-    };
-    offers.push(newOffer);
-
+    console.log(`Relaying offer from ${offererUserName} to ${targetUsername}`);
     const targetSocket = connectedSockets.find(
       (s) => s.userName === targetUsername
     );
     if (targetSocket) {
-      socket.to(targetSocket.socketId).emit("newOfferAwaiting", [newOffer]);
+      socket
+        .to(targetSocket.socketId)
+        .emit("newOfferAwaiting", { offer, offererUserName });
     } else {
       socket.emit("userNotFound");
     }
@@ -299,7 +276,8 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("iceCandidate", ({ candidate, from, to }) => {
+  socket.on("iceCandidate", ({ candidate, to, from }) => {
+    console.log(`Relaying ICE candidate from ${from} to ${to}`);
     const targetSocket = connectedSockets.find((s) => s.userName === to);
     if (targetSocket) {
       socket
