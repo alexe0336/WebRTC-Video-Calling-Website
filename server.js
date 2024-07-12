@@ -1,36 +1,46 @@
 const fs = require("fs");
-// const https = require('https')
 const http = require("http");
 const express = require("express");
-const app = express();
 const socketio = require("socket.io");
+const path = require("path");
+
+const app = express();
+const expressServer = http.createServer(app);
+
+// Serve static files from the current directory
 app.use(express.static(__dirname));
 
-//we need a key and cert to run https
-//we generated them with mkcert
-// $ mkcert create-ca
-// $ mkcert create-cert
-// const key = fs.readFileSync('cert.key');
-// const cert = fs.readFileSync('cert.crt');
+// Serve index.html for the root route
+app.get('/', (req, res, next) => {
+  const indexPath = path.join(__dirname, 'index.html');
+  fs.access(indexPath, fs.constants.F_OK, (err) => {
+    if (err) {
+      console.error(`index.html not found at ${indexPath}`);
+      return next(new Error('index.html not found'));
+    }
+    res.sendFile(indexPath);
+  });
+});
 
-//we changed our express setup so we can use https
-//pass the key and cert to createServer on https
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).send('Something broke!');
+});
 
-// const expressServer = https.createServer({key, cert}, app);
+// Add a catch-all route to serve index.html for any unmatched routes
+app.use((req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
 
-const expressServer = http.createServer(app);
-//create our socket.io server... it will listen to our express port
 const io = socketio(expressServer, {
   cors: {
     origin: [
-      "https://valuable-simplistic-tugboat.glitch.me", // Previous url
+      "http://onlinevideochat.glitch.me",
       "https://onlinevideochat.glitch.me",
+      "http://localhost:3000",
     ],
     methods: ["GET", "POST"],
   },
-});
-expressServer.listen(process.env.PORT || 3000, () => {
-  console.log(`Server running on port ${process.env.PORT || 3000}`);
 });
 
 //offers will contain {}
@@ -285,4 +295,8 @@ io.on("connection", (socket) => {
         .emit("iceCandidate", { candidate, from });
     }
   });
+});
+
+expressServer.listen(process.env.PORT || 3000, () => {
+  console.log(`Server running on port ${process.env.PORT || 3000}`);
 });

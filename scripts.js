@@ -104,10 +104,30 @@
           });
           localVideoEl.srcObject = stream;
           localStream = stream;
-          resolve();
+          resolve(stream);
         } catch (err) {
-          console.log(err);
-          reject();
+          console.error("Error accessing media devices:", err);
+          if (
+            err.name === "NotFoundError" ||
+            err.name === "DevicesNotFoundError"
+          ) {
+            reject(
+              new Error(
+                "Camera or microphone not found. Please check your device connections."
+              )
+            );
+          } else if (
+            err.name === "NotAllowedError" ||
+            err.name === "PermissionDeniedError"
+          ) {
+            reject(
+              new Error(
+                "Permission to use camera and microphone denied. Please allow access and try again."
+              )
+            );
+          } else {
+            reject(err);
+          }
         }
       });
     };
@@ -168,6 +188,8 @@
       console.log("======Added Ice Candidate======");
     };
 
+    //Functions below this point
+
     function hangup() {
       if (peerConnection) {
         peerConnection.close();
@@ -214,12 +236,15 @@
     function handleIncomingOffer(offerObj) {
       console.log("Received offer:", offerObj);
       incomingCallUsername = offerObj.offererUserName;
-      peerConnection = new RTCPeerConnection(peerConfiguration);
 
-      // Set up event listeners for the peer connection
+      if (!offerObj.offer || !offerObj.offer.type) {
+        console.error("Invalid offer object received");
+        return;
+      }
+
+      peerConnection = new RTCPeerConnection(peerConfiguration);
       setupPeerConnectionListeners(peerConnection);
 
-      // Set the remote description (the offer)
       peerConnection
         .setRemoteDescription(new RTCSessionDescription(offerObj.offer))
         .then(() => {
@@ -309,9 +334,9 @@
           );
       }
     });
-    socket.on("incomingCall", ({ from }) => {
+    socket.on("incomingCall", ({ from, offer }) => {
       console.log("Incoming call from:", from);
-      displayIncomingCallUI(from);
+      handleIncomingOffer({ offer, offererUserName: from });
     });
 
     socket.on("callAccepted", () => {
@@ -378,7 +403,6 @@
         try {
           await fetchUserMedia();
 
-          // Add local stream to peer connection
           localStream.getTracks().forEach((track) => {
             peerConnection.addTrack(track, localStream);
           });
@@ -396,12 +420,14 @@
           statusMessage.textContent = `In call with ${incomingCallUsername}`;
         } catch (error) {
           console.error("Error in answerIncomingCall:", error);
-          statusMessage.textContent = "Failed to establish call";
+          statusMessage.textContent =
+            error.message || "Failed to establish call";
         }
       } else {
         console.error(
           "No incoming call to answer or peerConnection not created"
         );
+        statusMessage.textContent = "Unable to answer call. Please try again.";
       }
     }
 
@@ -476,6 +502,27 @@
 
     function resetCallUI() {
       updateCallUI("default"); // This will now clear all buttons
+    }
+  });
+  // Place this code outside of the DOMContentLoaded event listener
+  document.addEventListener("click", function (event) {
+    if (event.target && event.target.id === "copy-username") {
+      const usernameElement = document.getElementById("user-name");
+      if (usernameElement) {
+        const username = usernameElement.textContent;
+
+        navigator.clipboard
+          .writeText(username)
+          .then(() => {
+            event.target.textContent = "Copied!";
+            setTimeout(() => {
+              event.target.textContent = "Copy";
+            }, 2000);
+          })
+          .catch((err) => {
+            console.error("Failed to copy: ", err);
+          });
+      }
     }
   });
 })();
