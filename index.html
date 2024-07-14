@@ -66,10 +66,15 @@
       <div class="controls">
         <!-- Buttons will be dynamically added here -->
       </div>
+      <div id="chat-interface" style="display: none">
+        <div id="chat-messages"></div>
+        <input type="text" id="message-input" placeholder="Type a message..." />
+        <button id="send-message">Send</button>
+      </div>
       <div id="status-message" class="mt-3 text-center"></div>
     </div>
   </body>
   <script src="/socket.io/socket.io.js"></script>
   <script src="scripts.js"></script>
-<!--   <script src="socketListeners.js"></script> -->
+  <!--   <script src="socketListeners.js"></script> -->
 </html>

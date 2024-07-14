@@ -105,3 +105,25 @@ body {
 #copy-username:hover {
   background-color: #e0e0e0;
 }
+
+#chat-interface {
+  margin-top: 20px;
+  border: 1px solid #ccc;
+  padding: 10px;
+}
+
+#chat-messages {
+  height: 200px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+
+.local-message {
+  text-align: right;
+  color: blue;
+}
+
+.remote-message {
+  text-align: left;
+  color: green;
+}
