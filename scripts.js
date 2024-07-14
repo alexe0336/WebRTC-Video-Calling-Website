@@ -9,6 +9,9 @@
     let inCall = false;
     let incomingCallUsername = null;
 
+    let iceRestartAttempts = 0;
+    const MAX_ICE_RESTART_ATTEMPTS = 3;
+
     const userName = "User-" + Math.floor(Math.random() * 100000);
     const password = "x";
     const userNameElement = document.querySelector("#user-name");
@@ -33,19 +36,22 @@
 
     let peerConfiguration = {
       iceServers: [
-        {
-          urls: [
-            "stun:stun.l.google.com:19302",
-            "stun:stun1.l.google.com:19302",
-          ],
-        },
+        { urls: "stun:[2001:4860:4860::8888]:19302" }, // IPv6 STUN server
+        { urls: "stun:[2001:4860:4860::8844]:19302" }, //IPv6 STUN server
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" },
+        { urls: "stun:stun3.l.google.com:19302" },
       ],
+      iceTransportPolicy: "all",
+      iceCandidatePoolSize: 10,
     };
 
     //when a client initiates a call
     // In the call function, modify the socket.emit for "newOffer":
     const call = async (targetUsername) => {
       try {
+        iceRestartAttempts = 0; // Reset the counter when starting a new call
+        incomingCallUsername = targetUsername; // Set this so we know who we're calling
         await fetchUserMedia();
         await createPeerConnection();
 
@@ -58,6 +64,8 @@
           offererUserName: userName,
         });
         didIOffer = true;
+        statusMessage.textContent = `Calling ${targetUsername}...`;
+        setTimeout(forceIceRestart, 10000); // Force ICE restart after 10 seconds if not connected
       } catch (err) {
         console.error("Error in call function:", err);
         statusMessage.textContent = "Failed to initiate call";
@@ -134,50 +142,105 @@
 
     const createPeerConnection = (offerObj) => {
       return new Promise(async (resolve, reject) => {
-        //RTCPeerConnection is the thing that creates the connection
-        //we can pass a config object, and that config object can contain stun servers
-        //which will fetch us ICE candidates
-        peerConnection = await new RTCPeerConnection(peerConfiguration);
+        peerConnection = new RTCPeerConnection(peerConfiguration);
         remoteStream = new MediaStream();
         remoteVideoEl.srcObject = remoteStream;
 
         localStream.getTracks().forEach((track) => {
-          //add localtracks so that they can be sent once the connection is established
           peerConnection.addTrack(track, localStream);
         });
 
         peerConnection.addEventListener("signalingstatechange", (event) => {
-          console.log(event);
-          console.log(peerConnection.signalingState);
+          console.log("Signaling State:", peerConnection.signalingState);
         });
 
-        peerConnection.addEventListener("icecandidate", (e) => {
-          console.log("........Ice candidate found!......");
-          console.log(e);
-          if (e.candidate) {
+        peerConnection.addEventListener("iceconnectionstatechange", () => {
+          console.log(
+            "ICE Connection State:",
+            peerConnection.iceConnectionState
+          );
+          if (peerConnection.iceConnectionState === "failed") {
+            if (iceRestartAttempts < MAX_ICE_RESTART_ATTEMPTS) {
+              console.log(`ICE restart attempt ${iceRestartAttempts + 1}`);
+              peerConnection.restartIce();
+              iceRestartAttempts++;
+            } else {
+              console.log(
+                "Max ICE restart attempts reached. Connection failed."
+              );
+              // Handle the failure (e.g., notify user, clean up resources)
+            }
+          }
+          peerConnection.addEventListener("iceconnectionstatechange", () => {
+            console.log(
+              "ICE Connection State:",
+              peerConnection.iceConnectionState
+            );
+            if (peerConnection.iceConnectionState === "connected") {
+              setInCallState();
+              updateCallStatus();
+            } else if (peerConnection.iceConnectionState === "failed") {
+              if (iceRestartAttempts < MAX_ICE_RESTART_ATTEMPTS) {
+                console.log(`ICE restart attempt ${iceRestartAttempts + 1}`);
+                peerConnection.restartIce();
+                iceRestartAttempts++;
+              } else {
+                console.log(
+                  "Max ICE restart attempts reached. Connection failed."
+                );
+                // Handle the failure (e.g., notify user, clean up resources)
+              }
+            }
+          });
+        });
+
+        peerConnection.onicegatheringstatechange = (ev) => {
+          let connection = ev.target;
+          switch (connection.iceGatheringState) {
+            case "gathering":
+              console.log("ICE gathering started");
+              break;
+            case "complete":
+              console.log("ICE gathering completed");
+              break;
+          }
+        };
+
+        let ipv6CandidateFound = false;
+
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            const isIPv6 =
+              event.candidate.address &&
+              event.candidate.address.indexOf(":") !== -1;
+            console.log(
+              `New ICE candidate (${isIPv6 ? "IPv6" : "IPv4"}):`,
+              event.candidate.candidate
+            );
+
+            if (isIPv6 && !ipv6CandidateFound) {
+              ipv6CandidateFound = true;
+              console.log("First IPv6 candidate found, prioritizing it");
+              peerConnection.addIceCandidate(event.candidate);
+            }
+
             socket.emit("sendIceCandidateToSignalingServer", {
-              iceCandidate: e.candidate,
+              iceCandidate: event.candidate,
               iceUserName: userName,
               didIOffer,
             });
           }
-        });
+        };
 
         peerConnection.addEventListener("track", (e) => {
-          console.log("Got a track from the other peer!! How exciting");
-          console.log(e);
+          console.log("Received remote track");
           e.streams[0].getTracks().forEach((track) => {
-            remoteStream.addTrack(track, remoteStream);
-            console.log("Here's an exciting moment... fingers crossed");
+            remoteStream.addTrack(track);
           });
         });
 
         if (offerObj) {
-          //this won't be set when called from call();
-          //will be set when we call from answerOffer()
-          // console.log(peerConnection.signalingState) //should be stable because no setDesc has been run yet
           await peerConnection.setRemoteDescription(offerObj.offer);
-          // console.log(peerConnection.signalingState) //should be have-remote-offer, because client2 has setRemoteDesc on the offer
         }
         resolve();
       });
@@ -189,6 +252,13 @@
     };
 
     //Functions below this point
+
+    function forceIceRestart() {
+      if (peerConnection && peerConnection.iceConnectionState !== "connected") {
+        console.log("Forcing ICE restart");
+        peerConnection.restartIce();
+      }
+    }
 
     function hangup() {
       if (peerConnection) {
@@ -213,10 +283,17 @@
 
       socket.emit("hangup", { userName });
 
-      console.log("Call ended");
+      if (isWaiting) {
+        statusMessage.textContent = "Call cancelled";
+      } else if (inCall) {
+        statusMessage.textContent = "Call ended";
+      } else {
+        statusMessage.textContent = "";
+      }
+
+      console.log("Call ended or cancelled");
       inCall = false;
       isWaiting = false;
-      statusMessage.textContent = "Call ended";
       incomingCallUsername = null;
       resetCallUI();
     }
@@ -235,6 +312,10 @@
 
     function handleIncomingOffer(offerObj) {
       console.log("Received offer:", offerObj);
+      if (!offerObj || !offerObj.offer) {
+        console.error("Invalid offer object received");
+        return;
+      }
       incomingCallUsername = offerObj.offererUserName;
 
       if (!offerObj.offer || !offerObj.offer.type) {
@@ -264,8 +345,9 @@
           { targetUsername, callerUsername: userName },
           (response) => {
             if (response.success) {
-              setWaitingState(true);
+              isWaiting = true;
               statusMessage.textContent = `Calling ${targetUsername}...`;
+              updateCallUI("waiting");
               call(targetUsername);
             } else {
               statusMessage.textContent =
@@ -284,24 +366,24 @@
       updateCallUI("incoming");
     }
 
-    function setWaitingState(waiting) {
-      isWaiting = waiting;
-      inCall = false;
+    //     function setWaitingState(waiting) {
+    //       isWaiting = waiting;
+    //       inCall = false;
 
-      if (waiting) {
-        statusMessage.textContent = "Waiting for answer...";
-        updateCallUI("waiting"); // We'll add this new state to updateCallUI
-      } else {
-        statusMessage.textContent = "";
-        resetCallUI();
-      }
-    }
+    //       if (waiting) {
+    //         statusMessage.textContent = "Waiting for answer...";
+    //         updateCallUI("waiting"); // We'll add this new state to updateCallUI
+    //       } else {
+    //         statusMessage.textContent = "";
+    //         resetCallUI();
+    //       }
+    //     }
 
     function setInCallState() {
       isWaiting = false;
       inCall = true;
       updateCallUI("inCall");
-      statusMessage.textContent = `In call with ${incomingCallUsername}`;
+      updateCallStatus();
     }
 
     // function handleWaitingHangup() {
@@ -312,11 +394,11 @@
     //   }
     // }
 
-    function cancelCall() {
-      socket.emit("cancelCall", { from: userName });
-      setWaitingState(false);
-      statusMessage.textContent = "Call cancelled";
-    }
+    //     function cancelCall() {
+    //       socket.emit("cancelCall", { from: userName });
+    //       setWaitingState(false);
+    //       statusMessage.textContent = "Call cancelled";
+    //     }
 
     // Socket listeners
     socket.on("answerResponse", (offerObj) => {
@@ -336,21 +418,28 @@
     });
     socket.on("incomingCall", ({ from, offer }) => {
       console.log("Incoming call from:", from);
-      handleIncomingOffer({ offer, offererUserName: from });
+      if (offer) {
+        handleIncomingOffer({ offer, offererUserName: from });
+      } else {
+        console.error("Received incomingCall event without an offer");
+        // Handle this case appropriately
+      }
     });
 
-    socket.on("callAccepted", () => {
+    socket.on("callAccepted", ({ by }) => {
+      if (!incomingCallUsername) {
+        incomingCallUsername = by;
+      }
       setInCallState();
-      statusMessage.textContent = "Call connected";
     });
 
     socket.on("callRejected", () => {
-      setWaitingState(false);
+      // setWaitingState(false);
       statusMessage.textContent = "Call rejected";
     });
 
     socket.on("userNotFound", () => {
-      setWaitingState(false);
+      // setWaitingState(false);
       statusMessage.textContent = "User not found";
     });
 
@@ -397,10 +486,17 @@
       handleIncomingOffer(offerObj);
     });
 
+    function updateCallStatus() {
+      if (inCall && incomingCallUsername) {
+        statusMessage.textContent = `In call with ${incomingCallUsername}`;
+      }
+    }
+
     async function answerIncomingCall() {
       console.log("Answering call from:", incomingCallUsername);
       if (incomingCallUsername && peerConnection) {
         try {
+          iceRestartAttempts = 0; // Reset the counter when answering a call
           await fetchUserMedia();
 
           localStream.getTracks().forEach((track) => {
@@ -418,6 +514,7 @@
 
           setInCallState();
           statusMessage.textContent = `In call with ${incomingCallUsername}`;
+          setTimeout(forceIceRestart, 10000); // Force ICE restart after 10 seconds if not connected
         } catch (error) {
           console.error("Error in answerIncomingCall:", error);
           statusMessage.textContent =
@@ -430,7 +527,6 @@
         statusMessage.textContent = "Unable to answer call. Please try again.";
       }
     }
-
     function setupPeerConnectionListeners(pc) {
       pc.onicecandidate = (event) => {
         if (event.candidate) {
@@ -470,20 +566,13 @@
 
         controlsDiv.appendChild(answerButton);
         controlsDiv.appendChild(rejectButton);
-      } else if (state === "inCall") {
+      } else if (state === "inCall" || state === "waiting") {
         const hangupButton = document.createElement("button");
         hangupButton.textContent = "Hangup";
         hangupButton.classList.add("btn", "btn-danger");
         hangupButton.addEventListener("click", hangup);
 
         controlsDiv.appendChild(hangupButton);
-      } else if (state === "waiting") {
-        const cancelButton = document.createElement("button");
-        cancelButton.textContent = "Cancel Call";
-        cancelButton.classList.add("btn", "btn-warning");
-        cancelButton.addEventListener("click", cancelCall);
-
-        controlsDiv.appendChild(cancelButton);
       }
       // 'default' state will clear all buttons
     }
